@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "bjarneo.hyperpower",
+  "name": "HyperPower",
+  "version": "1.0.0",
+  "license": "MIT",
+  "description": "Shakes the entire desktop like Hyper's HyperPower plugin. One click in the bar jitters every tiled window with random gaps, borders, and workspace padding.",
+  "kinds": [
+    "bar-widget",
+    "service"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml",
+    "service": "Service.qml"
+  },
+  "barWidget": {
+    "displayName": "HyperPower",
+    "description": "Shake the whole desktop. Click to toggle.",
+    "category": "Compositor",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "intensity": 16
+    },
+    "schema": [
+      {
+        "key": "intensity",
+        "type": "integer",
+        "label": "Shake intensity (pixels)",
+        "min": 0,
+        "max": 64,
+        "step": 2,
+        "defaultValue": 16
+      }
+    ]
+  }
+}

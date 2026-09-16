@@ -1,0 +1,320 @@
+#!/bin/bash
+
+# hyperpower - shake the whole Hyprland desktop like Hyper's HyperPower plugin.
+#
+# The shake engine rewrites the window gaps, the workspace gap, and the border
+# size with random values at a fixed rate. It saves the original values in a
+# runtime state directory and puts them back when the shake stops.
+#
+# usage: hyperpower [start|stop|toggle|status] [--intensity <px>] [--rate <ms>]
+
+set -uo pipefail
+
+SELF=$(readlink -f -- "$0")
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/omarchy-hyperpower"
+PID_FILE="$STATE_DIR/pid"
+OPTIONS_FILE="$STATE_DIR/options"
+ORIGINAL_FILE="$STATE_DIR/original"
+
+DEFAULT_INTENSITY=16
+DEFAULT_RATE_MS=60
+
+REQUESTED_INTENSITY=""
+REQUESTED_RATE=""
+
+die() {
+  echo "hyperpower: $*" >&2
+  exit 1
+}
+
+# Hyprland 0.56 dropped `hyprctl keyword` for the Lua config parser. Detect the
+# parser once so the same script also runs on older releases.
+detect_engine() {
+  if hyprctl eval 'return true' >/dev/null 2>&1; then
+    echo lua
+  else
+    echo legacy
+  fi
+}
+
+read_quad() {
+  local output
+  output=$(hyprctl getoption "$1" -j 2>/dev/null) || { echo "0 0 0 0"; return; }
+  jq -r 'if .css then .css else ((.int // 0) | "\(.) \(.) \(.) \(.)") end' <<<"$output"
+}
+
+read_int() {
+  local output
+  output=$(hyprctl getoption "$1" -j 2>/dev/null) || { echo 0; return; }
+  jq -r '.int // 0' <<<"$output"
+}
+
+to_lua_quad() {
+  local top right bottom left
+  read -r top right bottom left <<<"$1"
+  printf '{ top = %s, right = %s, bottom = %s, left = %s }' \
+    "${top:-0}" "${right:-0}" "${bottom:-0}" "${left:-0}"
+}
+
+save_original() {
+  mkdir -p "$STATE_DIR"
+  {
+    printf 'gaps_in="%s"\n' "$(read_quad general:gaps_in)"
+    printf 'gaps_out="%s"\n' "$(read_quad general:gaps_out)"
+    printf 'gaps_workspaces=%s\n' "$(read_int general:gaps_workspaces)"
+    printf 'border_size=%s\n' "$(read_int general:border_size)"
+  } > "$ORIGINAL_FILE"
+}
+
+restore_original() {
+  [[ -f $ORIGINAL_FILE ]] || return 0
+
+  local gaps_in gaps_out gaps_workspaces border_size
+  # shellcheck disable=SC1090
+  source "$ORIGINAL_FILE"
+
+  if [[ ${HYPERPOWER_ENGINE:-} == lua ]]; then
+    local lua
+    printf -v lua 'hl.config({ general = { gaps_in = %s, gaps_out = %s, gaps_workspaces = %s, border_size = %s } })' \
+      "$(to_lua_quad "${gaps_in:-0 0 0 0}")" \
+      "$(to_lua_quad "${gaps_out:-0 0 0 0}")" \
+      "${gaps_workspaces:-0}" \
+      "${border_size:-0}"
+    timeout 2 hyprctl eval "$lua" >/dev/null 2>&1
+  else
+    timeout 2 hyprctl keyword general:gaps_in "${gaps_in:-0 0 0 0}" >/dev/null 2>&1
+    timeout 2 hyprctl keyword general:gaps_out "${gaps_out:-0 0 0 0}" >/dev/null 2>&1
+    timeout 2 hyprctl keyword general:gaps_workspaces "${gaps_workspaces:-0}" >/dev/null 2>&1
+    timeout 2 hyprctl keyword general:border_size "${border_size:-0}" >/dev/null 2>&1
+  fi
+}
+
+apply_frame() {
+  local intensity=$1
+  local half=$(( intensity / 2 ))
+  local eighth=$(( intensity / 8 ))
+
+  local gi_top=$(( RANDOM % (half + 1) )) gi_right=$(( RANDOM % (half + 1) ))
+  local gi_bottom=$(( RANDOM % (half + 1) )) gi_left=$(( RANDOM % (half + 1) ))
+  local go_top=$(( RANDOM % (intensity + 1) )) go_right=$(( RANDOM % (intensity + 1) ))
+  local go_bottom=$(( RANDOM % (intensity + 1) )) go_left=$(( RANDOM % (intensity + 1) ))
+  local workspace_gap=$(( RANDOM % (half + 1) ))
+  local border=$(( RANDOM % (eighth + 1) ))
+
+  if [[ ${HYPERPOWER_ENGINE:-} == lua ]]; then
+    local lua
+    printf -v lua 'hl.config({ general = { gaps_in = { top = %s, right = %s, bottom = %s, left = %s }, gaps_out = { top = %s, right = %s, bottom = %s, left = %s }, gaps_workspaces = %s, border_size = %s } })' \
+      "$gi_top" "$gi_right" "$gi_bottom" "$gi_left" \
+      "$go_top" "$go_right" "$go_bottom" "$go_left" \
+      "$workspace_gap" "$border"
+    timeout 2 hyprctl eval "$lua" >/dev/null 2>&1
+  else
+    timeout 2 hyprctl keyword general:gaps_in "$gi_top $gi_right $gi_bottom $gi_left" >/dev/null 2>&1 &&
+      timeout 2 hyprctl keyword general:gaps_out "$go_top $go_right $go_bottom $go_left" >/dev/null 2>&1 &&
+      timeout 2 hyprctl keyword general:border_size "$border" >/dev/null 2>&1 &&
+      timeout 2 hyprctl keyword general:gaps_workspaces "$workspace_gap" >/dev/null 2>&1
+  fi
+}
+
+load_options() {
+  OPT_INTENSITY=$DEFAULT_INTENSITY
+  OPT_RATE_MS=$DEFAULT_RATE_MS
+
+  [[ -f $OPTIONS_FILE ]] || return 0
+
+  local key value
+  while IFS='=' read -r key value; do
+    case $key in
+      intensity) [[ $value =~ ^[0-9]+$ ]] && OPT_INTENSITY=$value ;;
+      rate_ms) [[ $value =~ ^[0-9]+$ ]] && OPT_RATE_MS=$value ;;
+    esac
+  done < "$OPTIONS_FILE"
+
+  (( OPT_INTENSITY > 64 )) && OPT_INTENSITY=64
+  (( OPT_RATE_MS < 16 )) && OPT_RATE_MS=16
+  (( OPT_RATE_MS > 1000 )) && OPT_RATE_MS=1000
+}
+
+write_options() {
+  mkdir -p "$STATE_DIR"
+  printf 'intensity=%s\nrate_ms=%s\n' "$1" "$2" > "$OPTIONS_FILE"
+}
+
+is_active() {
+  [[ -f $PID_FILE ]] || return 1
+
+  local pid
+  read -r pid < "$PID_FILE" 2>/dev/null || return 1
+  [[ -n $pid ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  grep -qa hyperpower "/proc/$pid/cmdline" 2>/dev/null
+}
+
+run_loop() {
+  mkdir -p "$STATE_DIR"
+  echo $$ > "$PID_FILE"
+
+  [[ -n ${HYPERPOWER_ENGINE:-} ]] || HYPERPOWER_ENGINE=$(detect_engine)
+
+  trap 'restore_original; rm -f "$PID_FILE"; exit 0' TERM INT
+  trap 'rm -f "$PID_FILE"' EXIT
+
+  local failures=0
+  while :; do
+    local current_pid
+    read -r current_pid < "$PID_FILE" 2>/dev/null || exit 0
+    [[ $current_pid == "$$" ]] || exit 0
+
+    load_options
+
+    if apply_frame "$OPT_INTENSITY"; then
+      failures=0
+    else
+      failures=$(( failures + 1 ))
+      # The compositor is gone or the socket is stale. Leave nothing running
+      # and drop the saved values, because a new session starts from the
+      # configured defaults anyway.
+      if (( failures >= 20 )); then
+        rm -f "$PID_FILE" "$ORIGINAL_FILE"
+        exit 0
+      fi
+    fi
+
+    sleep "$(( OPT_RATE_MS / 1000 )).$(printf '%03d' $(( OPT_RATE_MS % 1000 )))"
+  done
+}
+
+start_shake() {
+  mkdir -p "$STATE_DIR"
+
+  if [[ -n $REQUESTED_INTENSITY || -n $REQUESTED_RATE ]]; then
+    load_options
+    [[ -n $REQUESTED_INTENSITY ]] && OPT_INTENSITY=$REQUESTED_INTENSITY
+    [[ -n $REQUESTED_RATE ]] && OPT_RATE_MS=$REQUESTED_RATE
+    (( OPT_INTENSITY > 64 )) && OPT_INTENSITY=64
+    (( OPT_RATE_MS < 16 )) && OPT_RATE_MS=16
+    (( OPT_RATE_MS > 1000 )) && OPT_RATE_MS=1000
+    write_options "$OPT_INTENSITY" "$OPT_RATE_MS"
+  fi
+
+  is_active && return 0
+
+  # A pid file without a live loop means the last session died mid-shake.
+  # Put the saved values back before the new frame starts.
+  HYPERPOWER_ENGINE=$(detect_engine)
+  restore_original
+  save_original
+
+  local engine=$HYPERPOWER_ENGINE
+  HYPERPOWER_ENGINE=$engine setsid bash "$SELF" run >/dev/null 2>&1 &
+
+  local waited=0
+  while (( waited < 200 )); do
+    is_active && return 0
+    sleep 0.01
+    waited=$(( waited + 1 ))
+  done
+
+  die "the shake loop did not start"
+}
+
+stop_shake() {
+  if is_active; then
+    local pid
+    read -r pid < "$PID_FILE"
+
+    kill -TERM "$pid" 2>/dev/null
+
+    local waited=0
+    while kill -0 "$pid" 2>/dev/null && (( waited < 100 )); do
+      sleep 0.02
+      waited=$(( waited + 1 ))
+    done
+
+    kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null
+  fi
+
+  HYPERPOWER_ENGINE=$(detect_engine)
+  restore_original
+  rm -f "$PID_FILE" "$ORIGINAL_FILE"
+}
+
+toggle_shake() {
+  if is_active; then
+    stop_shake
+    echo inactive
+  else
+    start_shake
+    echo active
+  fi
+}
+
+status_shake() {
+  if is_active; then
+    echo active
+  else
+    echo inactive
+  fi
+}
+
+usage() {
+  cat >&2 <<USAGE
+usage: hyperpower [start|stop|toggle|status] [--intensity <px>] [--rate <ms>]
+
+  start     start the shake
+  stop      stop the shake and restore the saved values
+  toggle    start when inactive, stop when active
+  status    print active or inactive
+  --intensity <px>  maximum random gap in pixels, 0 to 64, default $DEFAULT_INTENSITY
+  --rate <ms>       milliseconds between frames, 16 to 1000, default $DEFAULT_RATE_MS
+USAGE
+}
+
+action="${1:-toggle}"
+shift || true
+
+while (( $# > 0 )); do
+  case $1 in
+    --intensity | --gap)
+      [[ -n ${2:-} ]] || die "--intensity needs a value"
+      REQUESTED_INTENSITY=$2
+      shift 2
+      ;;
+    --intensity=* | --gap=*)
+      REQUESTED_INTENSITY=${1#*=}
+      shift
+      ;;
+    --rate | --rate-ms)
+      [[ -n ${2:-} ]] || die "--rate needs a value"
+      REQUESTED_RATE=$2
+      shift 2
+      ;;
+    --rate=* | --rate-ms=*)
+      REQUESTED_RATE=${1#*=}
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+[[ -z $REQUESTED_INTENSITY || $REQUESTED_INTENSITY =~ ^[0-9]+$ ]] \
+  || die "intensity must be a whole number"
+[[ -z $REQUESTED_RATE || $REQUESTED_RATE =~ ^[0-9]+$ ]] \
+  || die "rate must be a whole number"
+
+case $action in
+  start | on) start_shake && status_shake ;;
+  stop | off) stop_shake && status_shake ;;
+  toggle) toggle_shake ;;
+  status) status_shake ;;
+  run) run_loop ;;
+  -h | --help) usage ;;
+  *) usage; exit 1 ;;
+esac
