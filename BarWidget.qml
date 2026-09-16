@@ -43,7 +43,7 @@ BarWidget {
     text: root.glyph
     active: root.shaking
     dimmed: !root.shaking
-    tooltipText: root.shaking ? "HyperPower is shaking the desktop" : "HyperPower is off"
+    tooltipText: root.shaking ? "HyperPower is on. Type to shake." : "HyperPower is off"
     onPressed: function() {
       if (root.hyperpowerService) root.hyperpowerService.toggle()
     }

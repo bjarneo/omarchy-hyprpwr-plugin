@@ -1,16 +1,17 @@
 # HyperPower for Omarchy
 
-A toggle for Omarchy that shakes the entire desktop, like the
+A toggle for Omarchy that shakes the entire desktop while you type, like the
 [HyperPower](https://hyper.is/store/hyperpower) plugin for Hyper.
 
-One click on the lightning bolt in the bar and every tiled window jitters.
-The gaps, the border size, and the workspace padding change to random values
-about 16 times each second. Click again and the original values come back.
+Every key press rewrites the window gaps, the border size, and the workspace
+padding with random values. The shake stops about 160 ms after the last key
+and the original values come back. Click the switch in the bar to turn it on
+or off.
 
 ## Requirements
 
-- Omarchy with Hyprland 0.56 or newer. The script also supports older
-  Hyprland releases that still have `hyprctl keyword`.
+- Omarchy with Hyprland 0.56 or newer. The shake uses the Hyprland Lua config
+  API, `input.keyboard.key` events, and `hl.config`.
 
 ## Install
 
@@ -23,13 +24,13 @@ later with `omarchy plugin enable bjarneo.hyperpower`.
 
 ## Use
 
-- Click the lightning bolt in the bar. Red means the shake runs.
+- Click the switch in the bar. Red means the shake runs.
 - Or run `omarchy-shell hyperpower toggle`.
 - Or bind a key to `omarchy-shell hyperpower toggle`.
 
 ## Keybinding
 
-Add the rebind or bind call to `~/.config/hypr/bindings.lua`:
+Add the bind call to `~/.config/hypr/bindings.lua`:
 
 ```lua
 o.bind("SUPER + SHIFT + H", "HyperPower", "omarchy-shell hyperpower toggle")
@@ -38,7 +39,8 @@ o.bind("SUPER + SHIFT + H", "HyperPower", "omarchy-shell hyperpower toggle")
 ## Settings
 
 The widget takes one setting, `intensity`. The value is the maximum random
-gap in pixels. The range is 0 to 64 and the default is 16.
+gap in pixels. The range is 0 to 64 and the default is 16. The value 0 keeps
+the border flicker and removes the gap movement.
 
 Set it in the bar settings menu, or inline in `~/.config/omarchy/shell.json`:
 
@@ -53,24 +55,22 @@ bar, and a keybinding all use the same script.
 
 ```bash
 bin/hyperpower status              # prints active or inactive
-bin/hyperpower start               # start the shake
+bin/hyperpower start               # shake on every key press
 bin/hyperpower start --intensity 32
-bin/hyperpower start --rate 40     # 40 ms between frames
-bin/hyperpower stop                # stop and restore the saved values
+bin/hyperpower stop                # remove the listener and restore the values
 bin/hyperpower toggle
 ```
 
-The script writes its state to `$XDG_RUNTIME_DIR/omarchy-hyperpower/`.
-It saves the original Hyprland values before the first frame and restores
-them on `stop`. A shell restart stops the shake, because the state lives
-with the session.
-
 ## How it works
 
-Hyprland 0.56 changed the config parser to Lua, so `hyprctl keyword` no
-longer applies at runtime. The script calls `hyprctl eval` with
-`hl.config(...)` instead. On older releases it falls back to
-`hyprctl keyword`.
+The script runs `hyprctl eval` with Lua code that registers a listener for the
+Hyprland event `input.keyboard.key`. Hyprland calls the listener on every key
+press, and the listener jitters the gaps through `hl.config`. An `hl.timer`
+restores the snapshot after the last key.
+
+The listener runs inside Hyprland, so the plugin never reads input devices and
+needs no extra permissions. A Hyprland config reload removes the listener and
+the shake turns off. The bar shows the state within two seconds.
 
 ## Uninstall
 

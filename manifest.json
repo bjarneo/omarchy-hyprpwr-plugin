@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "bjarneo.hyperpower",
   "name": "HyperPower",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "license": "MIT",
-  "description": "Shakes the entire desktop like Hyper's HyperPower plugin. One click in the bar jitters every tiled window with random gaps, borders, and workspace padding.",
+  "description": "Shakes the entire desktop while you type, like Hyper's HyperPower plugin. Every key press jitters the window gaps, borders, and workspace padding, and the values come back when you stop typing.",
   "kinds": [
     "bar-widget",
     "service"
