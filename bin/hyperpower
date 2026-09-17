@@ -9,16 +9,22 @@
 # key. This reads keys through the compositor, so no access to input devices
 # is needed.
 #
-# usage: hyperpower [start|stop|toggle|status] [--intensity <px>]
+# The crunch pack adds random corner rounding, a neon border strobe, and
+# thicker borders to every frame.
+#
+# usage: hyperpower [start|stop|toggle|status] [--intensity <px>] [--no-chaos]
 
 set -uo pipefail
 
 STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/omarchy-hyperpower"
-INTENSITY_FILE="$STATE_DIR/intensity"
+OPTIONS_FILE="$STATE_DIR/options"
 
 DEFAULT_INTENSITY=16
+DEFAULT_CHAOS=1
 REQUESTED_INTENSITY=""
+REQUESTED_CHAOS=""
 OPT_INTENSITY=$DEFAULT_INTENSITY
+OPT_CHAOS=$DEFAULT_CHAOS
 
 die() {
   echo "hyperpower: $*" >&2
@@ -35,15 +41,17 @@ require_lua() {
     || die "HyperPower needs the Hyprland Lua config API (Hyprland 0.56 or newer)"
 }
 
-# Runs on `start`. Snapshots the current gaps, then shakes them on every key
-# press. An idle timer 160 ms after the last key restores the snapshot.
-# __INTENSITY__ is replaced with the requested pixel value.
+# Runs on `start`. Snapshots the current look, then jitters it on every key
+# press. An idle timer restores the snapshot. __INTENSITY__ and __CHAOS__ are
+# replaced with the requested values.
 ARM_LUA='
 local I = __INTENSITY__
+local C = __CHAOS__
 local HP = _G.hyperpower
 
 if HP and HP.armed then
   HP.intensity = I
+  HP.chaos = C
   return true
 end
 
@@ -51,39 +59,92 @@ local function quad(t)
   return { top = t.top, right = t.right, bottom = t.bottom, left = t.left }
 end
 
+-- Vivid random color with full saturation, as rgba(......ee).
+local function neon()
+  local h = math.random()
+  local i = math.floor(h * 6)
+  local f = h * 6 - i
+  local q = 1 - f
+  local r, g, b
+  local m = i % 6
+  if m == 0 then r, g, b = 1, f, 0
+  elseif m == 1 then r, g, b = q, 1, 0
+  elseif m == 2 then r, g, b = 0, 1, f
+  elseif m == 3 then r, g, b = 0, q, 1
+  elseif m == 4 then r, g, b = f, 0, 1
+  else r, g, b = 1, 0, q end
+  return string.format("rgba(%02x%02x%02xee)", math.floor(r * 255), math.floor(g * 255), math.floor(b * 255))
+end
+
 local original = {
   gaps_in = quad(hl.get_config("general.gaps_in")),
   gaps_out = quad(hl.get_config("general.gaps_out")),
   gaps_workspaces = hl.get_config("general.gaps_workspaces"),
   border_size = hl.get_config("general.border_size"),
+  rounding = hl.get_config("decoration.rounding"),
+  active_border = hl.get_config("general.col.active_border"),
+  inactive_border = hl.get_config("general.col.inactive_border"),
 }
 
 local state = {
   armed = true,
   intensity = I,
+  chaos = C,
   original = original,
   idle = 0,
 }
 
-local function random_gaps()
-  local intensity = state.intensity
-  local half = math.floor(intensity / 2)
-  local eighth = math.floor(intensity / 8)
-  hl.config({ general = {
-    gaps_in = { top = math.random(0, half), right = math.random(0, half), bottom = math.random(0, half), left = math.random(0, half) },
-    gaps_out = { top = math.random(0, intensity), right = math.random(0, intensity), bottom = math.random(0, intensity), left = math.random(0, intensity) },
-    gaps_workspaces = math.random(0, half),
-    border_size = math.random(0, eighth),
-  }})
+local function restore()
+  hl.config({
+    general = {
+      gaps_in = state.original.gaps_in,
+      gaps_out = state.original.gaps_out,
+      gaps_workspaces = state.original.gaps_workspaces,
+      border_size = state.original.border_size,
+      col = {
+        active_border = state.original.active_border,
+        inactive_border = state.original.inactive_border,
+      },
+    },
+    decoration = {
+      rounding = state.original.rounding,
+    },
+  })
 end
 
-local function restore()
-  hl.config({ general = {
-    gaps_in = state.original.gaps_in,
-    gaps_out = state.original.gaps_out,
-    gaps_workspaces = state.original.gaps_workspaces,
-    border_size = state.original.border_size,
-  }})
+local function random_look()
+  local intensity = state.intensity
+  local half = math.floor(intensity / 2)
+  local border_max = math.max(2, math.floor(intensity / 4))
+
+  local cfg = {
+    general = {
+      gaps_in = {
+        top = math.random(0, half),
+        right = math.random(0, half),
+        bottom = math.random(0, half),
+        left = math.random(0, half),
+      },
+      gaps_out = {
+        top = math.random(0, intensity),
+        right = math.random(0, intensity),
+        bottom = math.random(0, intensity),
+        left = math.random(0, intensity),
+      },
+      gaps_workspaces = math.random(0, half),
+      border_size = math.random(0, border_max),
+    },
+  }
+
+  if state.chaos then
+    cfg.decoration = { rounding = math.random(0, intensity) }
+    cfg.general.col = {
+      active_border = { colors = { neon(), neon() }, angle = 45 },
+      inactive_border = { colors = { neon() }, angle = 45 },
+    }
+  end
+
+  hl.config(cfg)
 end
 
 state.timer = hl.timer(function()
@@ -94,13 +155,13 @@ state.timer = hl.timer(function()
     state.timer:set_enabled(false)
     restore()
   end
-end, { timeout = 80, type = "repeat" })
+end, { timeout = 45, type = "repeat" })
 state.timer:set_enabled(false)
 
 state.sub = hl.on("input.keyboard.key", function(keycode, time, pressed)
   if not state.armed or pressed ~= 1 then return end
   state.idle = 0
-  random_gaps()
+  random_look()
   state.timer:set_enabled(true)
 end)
 
@@ -115,12 +176,21 @@ if HP then
   if HP.timer then HP.timer:set_enabled(false) end
   if HP.sub then HP.sub:remove() end
   if HP.original then
-    hl.config({ general = {
-      gaps_in = HP.original.gaps_in,
-      gaps_out = HP.original.gaps_out,
-      gaps_workspaces = HP.original.gaps_workspaces,
-      border_size = HP.original.border_size,
-    }})
+    hl.config({
+      general = {
+        gaps_in = HP.original.gaps_in,
+        gaps_out = HP.original.gaps_out,
+        gaps_workspaces = HP.original.gaps_workspaces,
+        border_size = HP.original.border_size,
+        col = {
+          active_border = HP.original.active_border,
+          inactive_border = HP.original.inactive_border,
+        },
+      },
+      decoration = {
+        rounding = HP.original.rounding,
+      },
+    })
   end
   _G.hyperpower = nil
 end
@@ -135,28 +205,42 @@ end
 return "inactive"
 '
 
-load_intensity() {
+load_options() {
   OPT_INTENSITY=$DEFAULT_INTENSITY
+  OPT_CHAOS=$DEFAULT_CHAOS
 
-  if [[ -f $INTENSITY_FILE ]]; then
-    local value
-    read -r value < "$INTENSITY_FILE" || value=""
-    [[ $value =~ ^[0-9]+$ ]] && OPT_INTENSITY=$value
+  if [[ -f $OPTIONS_FILE ]]; then
+    local key value
+    while IFS='=' read -r key value; do
+      case $key in
+        intensity) [[ $value =~ ^[0-9]+$ ]] && OPT_INTENSITY=$value ;;
+        chaos) [[ $value =~ ^[01]$ ]] && OPT_CHAOS=$value ;;
+      esac
+    done < "$OPTIONS_FILE"
   fi
 
   [[ -n $REQUESTED_INTENSITY ]] && OPT_INTENSITY=$REQUESTED_INTENSITY
+  [[ -n $REQUESTED_CHAOS ]] && OPT_CHAOS=$REQUESTED_CHAOS
   (( OPT_INTENSITY > 64 )) && OPT_INTENSITY=64
+}
+
+write_options() {
+  mkdir -p "$STATE_DIR"
+  printf 'intensity=%s\nchaos=%s\n' "$OPT_INTENSITY" "$OPT_CHAOS" > "$OPTIONS_FILE"
 }
 
 start_shake() {
   require_lua
-  load_intensity
+  load_options
+
+  local chaos=false
+  (( OPT_CHAOS )) && chaos=true
 
   local lua=${ARM_LUA/__INTENSITY__/$OPT_INTENSITY}
+  lua=${lua/__CHAOS__/$chaos}
   hyprctl eval "$lua" >/dev/null 2>&1 || die "could not arm the shake listener"
 
-  mkdir -p "$STATE_DIR"
-  printf '%s\n' "$OPT_INTENSITY" > "$INTENSITY_FILE"
+  write_options
 }
 
 stop_shake() {
@@ -188,13 +272,14 @@ toggle_shake() {
 
 usage() {
   cat >&2 <<USAGE
-usage: hyperpower [start|stop|toggle|status] [--intensity <px>]
+usage: hyperpower [start|stop|toggle|status] [--intensity <px>] [--no-chaos]
 
   start     shake the desktop on every key press
-  stop      stop the shake and restore the saved values
+  stop      stop the shake and restore the saved look
   toggle    start when inactive, stop when active
   status    print active or inactive
   --intensity <px>  maximum random gap in pixels, 0 to 64, default $DEFAULT_INTENSITY
+  --no-chaos        keep the colors and corners, only move the gaps
 USAGE
 }
 
@@ -210,6 +295,14 @@ while (( $# > 0 )); do
       ;;
     --intensity=* | --gap=*)
       REQUESTED_INTENSITY=${1#*=}
+      shift
+      ;;
+    --chaos)
+      REQUESTED_CHAOS=1
+      shift
+      ;;
+    --no-chaos)
+      REQUESTED_CHAOS=0
       shift
       ;;
     -h | --help)

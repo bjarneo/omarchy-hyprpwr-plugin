@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "bjarneo.hyperpower",
   "name": "HyperPower",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "license": "MIT",
-  "description": "Shakes the entire desktop while you type, like Hyper's HyperPower plugin. Every key press jitters the window gaps, borders, and workspace padding, and the values come back when you stop typing.",
+  "description": "Shakes the entire desktop while you type, like Hyper's HyperPower plugin. Every key press jitters the window gaps and runs the crunch pack: random corner rounding, a neon border strobe, and thicker borders. The original look comes back when you stop typing.",
   "kinds": [
     "bar-widget",
     "service"
@@ -15,12 +15,13 @@
   },
   "barWidget": {
     "displayName": "HyperPower",
-    "description": "Shake the whole desktop. Click to toggle.",
+    "description": "Shake the whole desktop while you type. Click to toggle.",
     "category": "Compositor",
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "intensity": 16
+      "intensity": 16,
+      "chaos": true
     },
     "schema": [
       {
@@ -31,6 +32,13 @@
         "max": 64,
         "step": 2,
         "defaultValue": 16
+      },
+      {
+        "key": "chaos",
+        "type": "boolean",
+        "label": "Crunch pack",
+        "defaultValue": true,
+        "description": "Random corner rounding, neon border strobe, and thicker borders on every key press."
       }
     ]
   }

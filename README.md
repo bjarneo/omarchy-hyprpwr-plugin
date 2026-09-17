@@ -4,9 +4,10 @@ A toggle for Omarchy that shakes the entire desktop while you type, like the
 [HyperPower](https://hyper.is/store/hyperpower) plugin for Hyper.
 
 Every key press rewrites the window gaps, the border size, and the workspace
-padding with random values. The shake stops about 160 ms after the last key
-and the original values come back. Click the switch in the bar to turn it on
-or off.
+padding with random values. The crunch pack adds random corner rounding, a
+neon border strobe, and thicker borders. The shake stops about 90 ms after the
+last key and the original look comes back. Click the switch in the bar to turn
+it on or off.
 
 ## Requirements
 
@@ -38,14 +39,17 @@ o.bind("SUPER + SHIFT + H", "HyperPower", "omarchy-shell hyperpower toggle")
 
 ## Settings
 
-The widget takes one setting, `intensity`. The value is the maximum random
-gap in pixels. The range is 0 to 64 and the default is 16. The value 0 keeps
-the border flicker and removes the gap movement.
+The widget takes two settings.
 
-Set it in the bar settings menu, or inline in `~/.config/omarchy/shell.json`:
+- `intensity` is the maximum random gap in pixels. The range is 0 to 64 and
+  the default is 16. The value 0 keeps the border flicker and removes the gap
+  movement.
+- `chaos` turns the crunch pack on or off. The default is true.
+
+Set them in the bar settings menu, or inline in `~/.config/omarchy/shell.json`:
 
 ```json
-{ "id": "bjarneo.hyperpower", "intensity": 24 }
+{ "id": "bjarneo.hyperpower", "intensity": 24, "chaos": true }
 ```
 
 ## Command line
@@ -57,7 +61,8 @@ bar, and a keybinding all use the same script.
 bin/hyperpower status              # prints active or inactive
 bin/hyperpower start               # shake on every key press
 bin/hyperpower start --intensity 32
-bin/hyperpower stop                # remove the listener and restore the values
+bin/hyperpower start --no-chaos    # move the gaps, keep colors and corners
+bin/hyperpower stop                # remove the listener and restore the look
 bin/hyperpower toggle
 ```
 
@@ -65,8 +70,9 @@ bin/hyperpower toggle
 
 The script runs `hyprctl eval` with Lua code that registers a listener for the
 Hyprland event `input.keyboard.key`. Hyprland calls the listener on every key
-press, and the listener jitters the gaps through `hl.config`. An `hl.timer`
-restores the snapshot after the last key.
+press, and the listener jitters the layout through `hl.config`. An `hl.timer`
+restores the snapshot after the last key. The snapshot holds the gaps, the
+border size, the corner rounding, and both border gradients.
 
 The listener runs inside Hyprland, so the plugin never reads input devices and
 needs no extra permissions. A Hyprland config reload removes the listener and

@@ -14,6 +14,7 @@ Item {
   property bool active: false
   property bool stateLoaded: false
   property int intensity: 16
+  property bool chaos: true
 
   readonly property string scriptPath: {
     var url = String(Qt.resolvedUrl("bin/hyperpower"))
@@ -25,18 +26,21 @@ Item {
     statusProbe.running = true
   }
 
-  // Store the requested intensity. A running shake picks it up at once.
-  function applyIntensity(value) {
-    var pixels = Math.round(Number(value))
-    if (!isFinite(pixels)) return
-    pixels = Math.max(0, Math.min(64, pixels))
-    root.intensity = pixels
-    if (root.stateLoaded && root.active) startShake(pixels)
+  // Store the requested settings. A running shake picks them up at once.
+  function applySettings(pixels, chaosEnabled) {
+    var value = Math.round(Number(pixels))
+    if (isFinite(value)) root.intensity = Math.max(0, Math.min(64, value))
+    root.chaos = !!chaosEnabled
+    if (root.stateLoaded && root.active) startShake()
   }
 
-  function startShake(pixels) {
-    if (pixels === undefined) pixels = root.intensity
-    runAction([root.scriptPath, "start", "--intensity", String(pixels)])
+  function startShake() {
+    runAction([
+      root.scriptPath,
+      "start",
+      "--intensity", String(root.intensity),
+      root.chaos ? "--chaos" : "--no-chaos"
+    ])
   }
 
   function stopShake() {
@@ -102,7 +106,7 @@ Item {
     target: "hyperpower"
 
     function status(): string {
-      return JSON.stringify({ active: root.active, intensity: root.intensity })
+      return JSON.stringify({ active: root.active, intensity: root.intensity, chaos: root.chaos })
     }
 
     function toggle(): void {

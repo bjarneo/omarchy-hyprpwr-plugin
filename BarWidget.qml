@@ -25,13 +25,21 @@ BarWidget {
     return Math.max(0, Math.min(64, Math.round(value)))
   }
 
-  function pushIntensity() {
-    if (hyperpowerService) hyperpowerService.applyIntensity(root.intensity)
+  // Accept booleans from the settings panel and strings from shell.json.
+  readonly property bool chaos: {
+    var value = root.setting("chaos", true)
+    if (typeof value === "string") return value !== "false" && value !== "0" && value !== ""
+    return value !== false && value !== 0
   }
 
-  Component.onCompleted: pushIntensity()
-  onHyperpowerServiceChanged: pushIntensity()
-  onIntensityChanged: pushIntensity()
+  function pushSettings() {
+    if (hyperpowerService) hyperpowerService.applySettings(root.intensity, root.chaos)
+  }
+
+  Component.onCompleted: pushSettings()
+  onHyperpowerServiceChanged: pushSettings()
+  onIntensityChanged: pushSettings()
+  onChaosChanged: pushSettings()
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
