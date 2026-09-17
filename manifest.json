@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "bjarneo.hyperpower",
   "name": "HyperPower",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "license": "MIT",
-  "description": "Shakes the entire desktop while you type, like Hyper's HyperPower plugin. Every key press jitters the window gaps and runs the crunch pack: random corner rounding, a neon border strobe, and thicker borders. The original look comes back when you stop typing.",
+  "description": "Shakes the entire desktop while you type, like Hyper's HyperPower plugin. Every key press jitters the window gaps, runs the crunch pack with random corner rounding and neon borders, and sprays wow particles from the cursor. The original look comes back when you stop typing.",
   "kinds": [
     "bar-widget",
     "service"
@@ -21,7 +21,8 @@
     "defaultSection": "right",
     "defaults": {
       "intensity": 16,
-      "chaos": true
+      "chaos": true,
+      "wow": true
     },
     "schema": [
       {
@@ -39,6 +40,13 @@
         "label": "Crunch pack",
         "defaultValue": true,
         "description": "Random corner rounding, neon border strobe, and thicker borders on every key press."
+      },
+      {
+        "key": "wow",
+        "type": "boolean",
+        "label": "Wow particles",
+        "defaultValue": true,
+        "description": "Spray a particle burst from the cursor on every key press."
       }
     ]
   }

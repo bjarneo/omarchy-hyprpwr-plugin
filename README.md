@@ -5,9 +5,9 @@ A toggle for Omarchy that shakes the entire desktop while you type, like the
 
 Every key press rewrites the window gaps, the border size, and the workspace
 padding with random values. The crunch pack adds random corner rounding, a
-neon border strobe, and thicker borders. The shake stops about 90 ms after the
-last key and the original look comes back. Click the switch in the bar to turn
-it on or off.
+neon border strobe, and thicker borders. Wow mode sprays a burst of particles
+from the cursor. The shake stops about 90 ms after the last key and the
+original look comes back. Click the switch in the bar to turn it on or off.
 
 ## Requirements
 
@@ -17,7 +17,7 @@ it on or off.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/bjarneo/omarchy-hyperpower.git --enable
+omarchy plugin add https://github.com/bjarneo/omarchy-hyprpwr-plugin.git --enable
 ```
 
 The `--enable` flag adds the widget to the bar. Without it, enable the plugin
@@ -45,11 +45,12 @@ The widget takes two settings.
   the default is 16. The value 0 keeps the border flicker and removes the gap
   movement.
 - `chaos` turns the crunch pack on or off. The default is true.
+- `wow` turns the particle bursts on or off. The default is true.
 
 Set them in the bar settings menu, or inline in `~/.config/omarchy/shell.json`:
 
 ```json
-{ "id": "bjarneo.hyperpower", "intensity": 24, "chaos": true }
+{ "id": "bjarneo.hyperpower", "intensity": 24, "chaos": true, "wow": true }
 ```
 
 ## Command line

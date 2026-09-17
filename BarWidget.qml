@@ -32,14 +32,21 @@ BarWidget {
     return value !== false && value !== 0
   }
 
+  readonly property bool wow: {
+    var value = root.setting("wow", true)
+    if (typeof value === "string") return value !== "false" && value !== "0" && value !== ""
+    return value !== false && value !== 0
+  }
+
   function pushSettings() {
-    if (hyperpowerService) hyperpowerService.applySettings(root.intensity, root.chaos)
+    if (hyperpowerService) hyperpowerService.applySettings(root.intensity, root.chaos, root.wow)
   }
 
   Component.onCompleted: pushSettings()
   onHyperpowerServiceChanged: pushSettings()
   onIntensityChanged: pushSettings()
   onChaosChanged: pushSettings()
+  onWowChanged: pushSettings()
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight

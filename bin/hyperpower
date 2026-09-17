@@ -18,13 +18,17 @@ set -uo pipefail
 
 STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/omarchy-hyperpower"
 OPTIONS_FILE="$STATE_DIR/options"
+BURST_FILE="$STATE_DIR/bursts"
 
 DEFAULT_INTENSITY=16
 DEFAULT_CHAOS=1
+DEFAULT_WOW=1
 REQUESTED_INTENSITY=""
 REQUESTED_CHAOS=""
+REQUESTED_WOW=""
 OPT_INTENSITY=$DEFAULT_INTENSITY
 OPT_CHAOS=$DEFAULT_CHAOS
+OPT_WOW=$DEFAULT_WOW
 
 die() {
   echo "hyperpower: $*" >&2
@@ -47,11 +51,14 @@ require_lua() {
 ARM_LUA='
 local I = __INTENSITY__
 local C = __CHAOS__
+local W = __WOW__
+local BURST = "__BURST__"
 local HP = _G.hyperpower
 
 if HP and HP.armed then
   HP.intensity = I
   HP.chaos = C
+  HP.wow = W
   return true
 end
 
@@ -90,6 +97,8 @@ local state = {
   armed = true,
   intensity = I,
   chaos = C,
+  wow = W,
+  burstPath = BURST,
   original = original,
   idle = 0,
 }
@@ -162,6 +171,18 @@ state.sub = hl.on("input.keyboard.key", function(keycode, time, pressed)
   if not state.armed or pressed ~= 1 then return end
   state.idle = 0
   random_look()
+
+  if state.wow then
+    local pos = hl.get_cursor_pos()
+    if type(pos) == "table" and pos.x then
+      local file = io.open(state.burstPath, "a")
+      if file then
+        file:write(string.format("%d %d\n", math.floor(pos.x), math.floor(pos.y)))
+        file:close()
+      end
+    end
+  end
+
   state.timer:set_enabled(true)
 end)
 
@@ -208,6 +229,7 @@ return "inactive"
 load_options() {
   OPT_INTENSITY=$DEFAULT_INTENSITY
   OPT_CHAOS=$DEFAULT_CHAOS
+  OPT_WOW=$DEFAULT_WOW
 
   if [[ -f $OPTIONS_FILE ]]; then
     local key value
@@ -215,29 +237,38 @@ load_options() {
       case $key in
         intensity) [[ $value =~ ^[0-9]+$ ]] && OPT_INTENSITY=$value ;;
         chaos) [[ $value =~ ^[01]$ ]] && OPT_CHAOS=$value ;;
+        wow) [[ $value =~ ^[01]$ ]] && OPT_WOW=$value ;;
       esac
     done < "$OPTIONS_FILE"
   fi
 
   [[ -n $REQUESTED_INTENSITY ]] && OPT_INTENSITY=$REQUESTED_INTENSITY
   [[ -n $REQUESTED_CHAOS ]] && OPT_CHAOS=$REQUESTED_CHAOS
+  [[ -n $REQUESTED_WOW ]] && OPT_WOW=$REQUESTED_WOW
   (( OPT_INTENSITY > 64 )) && OPT_INTENSITY=64
 }
 
 write_options() {
   mkdir -p "$STATE_DIR"
-  printf 'intensity=%s\nchaos=%s\n' "$OPT_INTENSITY" "$OPT_CHAOS" > "$OPTIONS_FILE"
+  printf 'intensity=%s\nchaos=%s\nwow=%s\n' "$OPT_INTENSITY" "$OPT_CHAOS" "$OPT_WOW" > "$OPTIONS_FILE"
 }
 
 start_shake() {
   require_lua
   load_options
 
-  local chaos=false
+  local chaos=false wow=false
   (( OPT_CHAOS )) && chaos=true
+  (( OPT_WOW )) && wow=true
 
   local lua=${ARM_LUA/__INTENSITY__/$OPT_INTENSITY}
   lua=${lua/__CHAOS__/$chaos}
+  lua=${lua/__WOW__/$wow}
+  lua=${lua/__BURST__/$BURST_FILE}
+
+  mkdir -p "$STATE_DIR"
+  : > "$BURST_FILE"
+
   hyprctl eval "$lua" >/dev/null 2>&1 || die "could not arm the shake listener"
 
   write_options
@@ -272,7 +303,7 @@ toggle_shake() {
 
 usage() {
   cat >&2 <<USAGE
-usage: hyperpower [start|stop|toggle|status] [--intensity <px>] [--no-chaos]
+usage: hyperpower [start|stop|toggle|status] [--intensity <px>] [--no-chaos] [--no-wow]
 
   start     shake the desktop on every key press
   stop      stop the shake and restore the saved look
@@ -280,6 +311,7 @@ usage: hyperpower [start|stop|toggle|status] [--intensity <px>] [--no-chaos]
   status    print active or inactive
   --intensity <px>  maximum random gap in pixels, 0 to 64, default $DEFAULT_INTENSITY
   --no-chaos        keep the colors and corners, only move the gaps
+  --no-wow          skip the particle burst on every key press
 USAGE
 }
 
@@ -303,6 +335,14 @@ while (( $# > 0 )); do
       ;;
     --no-chaos)
       REQUESTED_CHAOS=0
+      shift
+      ;;
+    --wow)
+      REQUESTED_WOW=1
+      shift
+      ;;
+    --no-wow)
+      REQUESTED_WOW=0
       shift
       ;;
     -h | --help)
